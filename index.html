@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mijn Privacy Scanner</title>
+    <!-- Veilige scan-software via betrouwbare CDN -->
+    <script src="https://jsdelivr.net"></script>
+    <style>
+        body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; overflow: hidden; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        #status { position: absolute; bottom: 20px; background: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; border-radius: 20px; font-weight: bold; pointer-events: none; text-align: center; z-index: 10; }
+    </style>
+</head>
+<body>
+
+    <video id="video" autoplay playsinline></video>
+    <div id="status">Klik 1x op het scherm om klembord te activeren...</div>
+
+    <script>
+        const statusElement = document.getElementById('status');
+        let klembordGeactiveerd = false;
+
+        // Vraag toestemming voor klembord via een klik (browserbeveiliging)
+        window.addEventListener('click', () => {
+            if (!klembordGeactiveerd) {
+                klembordGeactiveerd = true;
+                statusElement.innerText = "Camera opstarten...";
+                startScanner();
+            }
+        });
+
+        function startScanner() {
+            const codeReader = new ZXing.BrowserMultiFormatReader();
+            let isScanning = true;
+            statusElement.innerText = "Richt camera op QR of Barcode...";
+
+            codeReader.decodeFromVideoDevice(null, 'video', (result, err) => {
+                if (result && isScanning) {
+                    isScanning = false; 
+
+                    // Direct kopiëren naar klembord ZONDER tonen
+                    navigator.clipboard.writeText(result.text).then(() => {
+                        statusElement.innerText = "GEKOPIEERD NAAR KLEMBORD!";
+                        statusElement.style.background = "#2ecc71";
+                        
+                        setTimeout(() => {
+                            statusElement.innerText = "Richt camera op QR of Barcode...";
+                            statusElement.style.background = "rgba(0,0,0,0.8)";
+                            isScanning = true;
+                        }, 2000);
+                    }).catch(() => {
+                        statusElement.innerText = "Kopieerfout. Klik nogmaals.";
+                        statusElement.style.background = "#e74c3c";
+                        isScanning = true;
+                    });
+                }
+            });
+        }
+    </script>
+</body>
+</html>
