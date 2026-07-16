@@ -3,110 +3,138 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mijn Privacy Scanner</title>
+    <title>Mijn Offline Klembord Scanner</title>
     <style>
-        body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; overflow: hidden; position: relative; }
-        video { width: 100%; height: 100%; object-fit: cover; background: #000; }
+        body { margin: 0; background: #111; color: #fff; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; overflow: hidden; }
         
-        /* Het visuele scankader in het midden */
+        /* Het scankader (visueel richtvak voor de foto) */
+        .scan-container { position: relative; width: 320px; height: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         .scan-overlay {
-            position: absolute;
-            width: 280px;
-            height: 200px;
-            border: 4px solid #fff;
-            border-radius: 12px;
-            box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.6);
-            pointer-events: none;
-            z-index: 5;
-            transition: border-color 0.2s ease;
+            width: 300px;
+            height: 220px;
+            border: 4px dashed #fff;
+            border-radius: 16px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #222;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
         }
-
-        #status { position: absolute; bottom: 20px; background: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; border-radius: 20px; font-weight: bold; pointer-events: none; text-align: center; z-index: 10; max-width: 80%; line-height: 1.4; }
+        .scan-overlay:hover { border-color: #3498db; background: #2a2a2a; }
+        
+        #preview-img { max-width: 100%; max-height: 100%; object-fit: contain; display: none; border-radius: 12px; }
+        .upload-text { text-align: center; font-weight: bold; color: #aaa; padding: 20px; pointer-events: none; }
+        
+        #status { margin-top: 260px; background: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; border-radius: 20px; font-weight: bold; text-align: center; max-width: 80%; line-height: 1.4; z-index: 10; }
+        #file-input { display: none; }
     </style>
 </head>
 <body>
 
-    <div class="scan-overlay" id="overlay"></div>
-    <video id="video" autoplay playsinline muted></video>
-    <div id="status">Klik 1x op het scherm om te starten...</div>
+    <!-- Het visuele vak in het midden van het scherm -->
+    <div class="scan-container">
+        <div class="scan-overlay" id="drop-zone" onclick="document.getElementById('file-input').click()">
+            <div class="upload-text" id="prompt-text">Klik hier om foto te kiezen<br><small>of druk buiten dit vak op CTRL+V om te plakken</small></div>
+            <img id="preview-img" alt="Voorbeeld">
+        </div>
+    </div>
+
+    <input type="file" id="file-input" accept="image/*">
+    <div id="status">Klaar voor foto of klembord-plak...</div>
 
     <script>
-        const video = document.getElementById('video');
         const statusElement = document.getElementById('status');
-        const overlayElement = document.getElementById('overlay');
-        let scannerGestart = false;
-        let isScanning = true;
+        const promptText = document.getElementById('prompt-text');
+        const previewImg = document.getElementById('preview-img');
+        const overlay = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
 
-        // Start direct na een klik op het scherm om de klembord-rechten te activeren
-        window.addEventListener('click', () => {
-            if (!scannerGestart) {
-                scannerGestart = true;
-                statusElement.innerText = "Camera opstarten...";
-                startOfflineScanner();
+        // LUISTER NAAR CTRL+V (KLEMBORD) OVERAL OP DE PAGINA
+        window.addEventListener('paste', (e) => {
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            for (const item of items) {
+                if (item.kind === 'file' && item.type.startsWith('image/')) {
+                    const blob = item.getAsFile();
+                    verwerkAfbeelding(blob);
+                    break;
+                }
             }
         });
 
-        async function startOfflineScanner() {
+        // LUISTER NAAR BESTANDSUPLOAD (KLIKKEN OP HET VAK)
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                verwerkAfbeelding(e.target.files[0]);
+            }
+        });
+
+        // DE CODENSLUITING EN VERWERKING (100% OFFLINE VIA CHROME ENGINE)
+        async function verwerkAfbeelding(blob) {
+            statusElement.innerText = "Afbeelding inlezen...";
+            statusElement.style.background = "rgba(0,0,0,0.8)";
+            
+            // Toon de afbeelding kort in het vak als feedback
+            const url = URL.createObjectURL(blob);
+            previewImg.src = url;
+            previewImg.style.display = "block";
+            promptText.style.display = "none";
+
+            // Gebruik Chrome's ingebouwde, offline afbeeldingsdecoder
+            if (!window.BarcodeDetector) {
+                statusElement.innerText = "Fout: Jouw Windows Chrome mist de decoder. Gebruik Edge of update Chrome.";
+                statusElement.style.background = "#e74c3c";
+                return;
+            }
+
+            const detector = new BarcodeDetector({
+                formats: ['qr_code', 'ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a']
+            });
+
             try {
-                // Start de webcam direct op Windows Chrome
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } 
-                });
-                
-                video.srcObject = stream;
-                statusElement.innerText = "Plaats de code in het witte vak...";
+                // Maak een tijdelijk HTML-afbeeldingsobject aan om de pixels te lezen
+                const img = new Image();
+                img.src = url;
+                img.onload = async () => {
+                    try {
+                        const barcodes = await detector.detect(img);
+                        if (barcodes.length > 0) {
+                            const resultaatTekst = barcodes[0].rawValue;
 
-                // Maak een verborgen canvas aan om videobeelden lokaal te analyseren
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                            // DIRECT EN ONZICHTBAAR KOPIËREN NAAR KLEYMBORD
+                            await navigator.clipboard.writeText(resultaatTekst);
+                            
+                            statusElement.innerText = "GEKOPIEERD NAAR KLEMBORD!";
+                            statusElement.style.background = "#2ecc71";
+                            overlay.style.borderColor = "#2ecc71";
 
-                // Start een snelle, interne scanloop (elke 250ms) zonder internet te gebruiken
-                setInterval(() => {
-                    if (!isScanning || video.readyState !== video.HAVE_ENOUGH_DATA) return;
-
-                    // Stel de canvasgrootte gelijk aan de video
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    
-                    // Teken het huidige camerabeeld op de onzichtbare canvas
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                    
-                    // Haal de pixelgegevens op om te controleren op patronen
-                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    
-                    // Simpele, ingebouwde herkenning voor basiscodes (fallback route)
-                    // We scannen hier lokaal op contrastwijzigingen
-                    let dummyGevonden = false;
-                    
-                    // OPMERKING: Omdat we geen externe libraries mogen inladen van je netwerk,
-                    // gebruikt deze code de lokale beeld-buffer. 
-                    // Probeer nu een QR-code strak voor de lens te houden.
-                    
-                }, 250);
-
-            } catch (err) {
-                statusElement.innerText = "Camera geblokkeerd of niet gevonden. Controleer het slotje linksboven.";
+                            // Reset na 2 seconden voor de volgende foto
+                            setTimeout(resetScanner, 2000);
+                        } else {
+                            statusElement.innerText = "Geen QR of Barcode gevonden op de foto. Probeer scherper.";
+                            statusElement.style.background = "#e74c3c";
+                            overlay.style.borderColor = "#e74c3c";
+                            setTimeout(resetScanner, 3000);
+                        }
+                    } catch (err) {
+                        statusElement.innerText = "Fout bij decoderen van de pixels.";
+                        statusElement.style.background = "#e74c3c";
+                    }
+                };
+            } catch (e) {
+                statusElement.innerText = "Algemene offline fout.";
                 statusElement.style.background = "#e74c3c";
             }
         }
 
-        // Universele functie om resultaat onzichtbaar te verwerken en te kopiëren
-        async function kopieerResultaat(tekst) {
-            try {
-                await navigator.clipboard.writeText(tekst);
-                statusElement.innerText = "GEKOPIEERD NAAR KLEMBORD!";
-                statusElement.style.background = "#2ecc71";
-                overlayElement.style.borderColor = "#2ecc71";
-
-                setTimeout(() => {
-                    statusElement.innerText = "Plaats de code in het witte vak...";
-                    statusElement.style.background = "rgba(0,0,0,0.8)";
-                    overlayElement.style.borderColor = "#fff";
-                    isScanning = true;
-                }, 2000);
-            } catch (e) {
-                statusElement.innerText = "Klembord fout. Klik nogmaals.";
-            }
+        function resetScanner() {
+            statusElement.innerText = "Klaar voor foto of klembord-plak...";
+            statusElement.style.background = "rgba(0,0,0,0.8)";
+            overlay.style.borderColor = "#fff";
+            previewImg.style.display = "none";
+            promptText.style.display = "block";
+            fileInput.value = "";
         }
     </script>
 </body>
