@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mijn Offline Privacy Scanner</title>
+    <title>Mijn Privacy Scanner</title>
     <style>
         body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; overflow: hidden; position: relative; }
         video { width: 100%; height: 100%; object-fit: cover; background: #000; }
@@ -28,80 +28,67 @@
 
     <div class="scan-overlay" id="overlay"></div>
     <video id="video" autoplay playsinline muted></video>
-    <div id="status">Klik 1x op het scherm om te starten...</div>
+    <div id="status">Een moment geduld, scanner laadt in...</div>
 
     <script>
-        const video = document.getElementById('video');
         const statusElement = document.getElementById('status');
         const overlayElement = document.getElementById('overlay');
         let scannerGestart = false;
-        let isScanning = true;
 
-        // Start direct na een klik op het scherm
-        window.addEventListener('click', () => {
-            if (!scannerGestart) {
-                scannerGestart = true;
-                statusElement.innerText = "Camera opstarten...";
-                initChromeScanner();
-            }
-        });
-
-        async function initChromeScanner() {
-            // Controleer of de ingebouwde Chrome engine beschikbaar is
-            if (!window.BarcodeDetector) {
-                statusElement.innerText = "Systeemfout: Jouw Chrome versie ondersteunt dit niet. Update Google Chrome.";
-                statusElement.style.background = "#e74c3c";
-                return;
-            }
-
-            // Stel Chrome in om alle mogelijke QR en barcodes te herkennen
-            const detector = new BarcodeDetector({
-                formats: ['qr_code', 'ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a']
+        // WE OMZEILEN DE BLOKKADE: We laden de software in via een alternatieve spiegelserver (cdnjs)
+        const script = document.createElement('script');
+        script.src = 'https://cloudflare.com';
+        script.crossOrigin = 'anonymous';
+        
+        script.onload = () => {
+            statusElement.innerText = "Klik 1x op het scherm om te starten...";
+            
+            // Luister naar de klik om de camera te starten
+            window.addEventListener('click', () => {
+                if (!scannerGestart) {
+                    scannerGestart = true;
+                    statusElement.innerText = "Camera opstarten...";
+                    startScanner();
+                }
             });
+        };
 
-            try {
-                // Vraag camera aan via Chrome
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } 
-                });
-                
-                video.srcObject = stream;
-                statusElement.innerText = "Plaats de code in het witte vak...";
+        script.onerror = () => {
+            statusElement.innerText = "Netwerkblokkade te streng. Gebruik de mobiele link via 4G/5G.";
+            statusElement.style.background = "#e74c3c";
+        };
 
-                // Start een supersnelle, interne scanloop (elke 200 milliseconden)
-                setInterval(async () => {
-                    if (!isScanning) return;
-                    
-                    try {
-                        const barcodes = await detector.detect(video);
-                        if (barcodes.length > 0) {
-                            isScanning = false; // Stop tijdelijk met scannen
-                            const gescandeTekst = barcodes[0].rawValue;
+        document.head.appendChild(script);
 
-                            // Kopieer direct onzichtbaar naar je klembord
-                            await navigator.clipboard.writeText(gescandeTekst);
-                            
-                            statusElement.innerText = "GEKOPIEERD NAAR KLEMBORD!";
-                            statusElement.style.background = "#2ecc71";
-                            overlayElement.style.borderColor = "#2ecc71"; // Maak vak groen
+        function startScanner() {
+            const codeReader = new ZXing.BrowserMultiFormatReader();
+            let isScanning = true;
+            statusElement.innerText = "Plaats de code in het witte vak...";
 
-                            // Start na 2 seconden weer op voor de volgende code
-                            setTimeout(() => {
-                                statusElement.innerText = "Plaats de code in het witte vak...";
-                                statusElement.style.background = "rgba(0,0,0,0.8)";
-                                overlayElement.style.borderColor = "#fff";
-                                isScanning = true;
-                            }, 2000);
-                        }
-                    } catch (e) {
-                        // Negeer framefouten tijdens het bewegen
-                    }
-                }, 200);
+            codeReader.decodeFromVideoDevice(undefined, 'video', (result, err) => {
+                if (result && isScanning) {
+                    isScanning = false; // Stop tijdelijk met scannen
 
-            } catch (err) {
-                statusElement.innerText = "Camera geblokkeerd. Geef Chrome toestemming via het slotje linksboven.";
-                statusElement.style.background = "#e74c3c";
-            }
+                    // Direct kopiëren naar klembord ZONDER het resultaat te tonen
+                    navigator.clipboard.writeText(result.text).then(() => {
+                        statusElement.innerText = "GEKOPIEERD NAAR KLEMBORD!";
+                        statusElement.style.background = "#2ecc71";
+                        overlayElement.style.borderColor = "#2ecc71"; // Maak vak groen
+                        
+                        // Reset na 2 seconden voor de volgende code
+                        setTimeout(() => {
+                            statusElement.innerText = "Plaats de code in het witte vak...";
+                            statusElement.style.background = "rgba(0,0,0,0.8)";
+                            overlayElement.style.borderColor = "#fff";
+                            isScanning = true;
+                        }, 2000);
+                    }).catch(() => {
+                        statusElement.innerText = "Kopieerfout. Klik nogmaals op het scherm.";
+                        statusElement.style.background = "#e74c3c";
+                        isScanning = true;
+                    });
+                }
+            });
         }
     </script>
 </body>
