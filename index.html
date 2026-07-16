@@ -7,8 +7,21 @@
     <style>
         body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; overflow: hidden; position: relative; }
         video { width: 100%; height: 100%; object-fit: cover; background: #000; }
-        .scan-overlay { position: absolute; width: 280px; height: 200px; border: 4px solid #fff; border-radius: 12px; box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.5); pointer-events: none; z-index: 5; transition: border-color 0.2s ease; }
-        #status { position: absolute; bottom: 20px; background: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; border-radius: 20px; font-weight: bold; pointer-events: none; text-align: center; z-index: 10; max-width: 80%; }
+        
+        /* Het visuele scankader in het midden */
+        .scan-overlay {
+            position: absolute;
+            width: 280px;
+            height: 200px;
+            border: 4px solid #fff;
+            border-radius: 12px;
+            box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.6);
+            pointer-events: none;
+            z-index: 5;
+            transition: border-color 0.2s ease;
+        }
+
+        #status { position: absolute; bottom: 20px; background: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; border-radius: 20px; font-weight: bold; pointer-events: none; text-align: center; z-index: 10; max-width: 80%; line-height: 1.4; }
     </style>
 </head>
 <body>
@@ -18,80 +31,77 @@
     <div id="status">Klik 1x op het scherm om te starten...</div>
 
     <script>
-        // Dit laadt de scan-software direct in zonder internetverbinding te gebruiken
-        const script = document.createElement('script');
-        script.src = 'https://githack.com';
-        
-        // Mocht githack ook blokkeren, gebruiken we een gegarandeerde nood-fallback die ALTIJD werkt:
-        script.onerror = () => {
-            statusElement.innerText = "Systeemfout: Internet blokkeert alles. Neem contact op.";
-        };
-        document.head.appendChild(script);
-
+        const video = document.getElementById('video');
         const statusElement = document.getElementById('status');
         const overlayElement = document.getElementById('overlay');
         let scannerGestart = false;
+        let isScanning = true;
 
+        // Start direct na een klik op het scherm
         window.addEventListener('click', () => {
             if (!scannerGestart) {
                 scannerGestart = true;
-                statusElement.innerText = "Scanner initialiseren...";
-                
-                // Controleer of de software klaarstaat (we wachten 500ms voor de zekerheid)
-                setTimeout(startScanner, 500);
+                statusElement.innerText = "Camera opstarten...";
+                initChromeScanner();
             }
         });
 
-        function startScanner() {
-            // Als de netwerkblokkade te streng is, schakelen we direct over naar de ingebouwde Chrome-engine
-            const ModernScanner = window.ZXing || (window.ZXingBrowser && window.ZXingBrowser.BrowserMultiFormatReader ? window.ZXingBrowser : null);
-            
-            if (!ModernScanner && !window.BarcodeDetector) {
-                statusElement.innerText = "Fout: Netwerk blokkeert de scanner. Schakel wifi uit en probeer 4G/5G.";
+        async function initChromeScanner() {
+            // Controleer of de ingebouwde Chrome engine beschikbaar is
+            if (!window.BarcodeDetector) {
+                statusElement.innerText = "Systeemfout: Jouw Chrome versie ondersteunt dit niet. Update Google Chrome.";
                 statusElement.style.background = "#e74c3c";
                 return;
             }
 
-            if (ModernScanner) {
-                const codeReader = new ModernScanner.BrowserMultiFormatReader();
-                let isScanning = true;
+            // Stel Chrome in om alle mogelijke QR en barcodes te herkennen
+            const detector = new BarcodeDetector({
+                formats: ['qr_code', 'ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a']
+            });
+
+            try {
+                // Vraag camera aan via Chrome
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } 
+                });
+                
+                video.srcObject = stream;
                 statusElement.innerText = "Plaats de code in het witte vak...";
 
-                codeReader.decodeFromVideoDevice(undefined, 'video', (result, err) => {
-                    if (result && isScanning) {
-                        isScanning = false; 
-                        verwerkResultaat(result.text);
-                    }
-                });
-            } else {
-                // Alternatieve ingebouwde Chrome route als internet compleet plat ligt
-                const detector = new BarcodeDetector({ formats: ['qr_code', 'ean_13', 'code_128'] });
-                navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(stream => {
-                    document.getElementById('video').srcObject = stream;
-                    statusElement.innerText = "Plaats de code in het witte vak (Noodmodus)...";
-                    setInterval(async () => {
-                        try {
-                            const barcodes = await detector.detect(document.getElementById('video'));
-                            if (barcodes.length > 0) verwerkResultaat(barcodes[0].rawValue);
-                        } catch (e) {}
-                    }, 300);
-                });
-            }
-        }
+                // Start een supersnelle, interne scanloop (elke 200 milliseconden)
+                setInterval(async () => {
+                    if (!isScanning) return;
+                    
+                    try {
+                        const barcodes = await detector.detect(video);
+                        if (barcodes.length > 0) {
+                            isScanning = false; // Stop tijdelijk met scannen
+                            const gescandeTekst = barcodes[0].rawValue;
 
-        function verwerkResultaat(tekst) {
-            navigator.clipboard.writeText(tekst).then(() => {
-                statusElement.innerText = "GEKOPIEERD NAAR KLEMBORD!";
-                statusElement.style.background = "#2ecc71";
-                overlayElement.style.borderColor = "#2ecc71";
-                
-                setTimeout(() => {
-                    statusElement.innerText = "Plaats de code in het witte vak...";
-                    statusElement.style.background = "rgba(0,0,0,0.8)";
-                    overlayElement.style.borderColor = "#fff";
-                    window.location.reload(); // Herlaad de pagina om direct weer schoon te scannen
-                }, 2000);
-            });
+                            // Kopieer direct onzichtbaar naar je klembord
+                            await navigator.clipboard.writeText(gescandeTekst);
+                            
+                            statusElement.innerText = "GEKOPIEERD NAAR KLEMBORD!";
+                            statusElement.style.background = "#2ecc71";
+                            overlayElement.style.borderColor = "#2ecc71"; // Maak vak groen
+
+                            // Start na 2 seconden weer op voor de volgende code
+                            setTimeout(() => {
+                                statusElement.innerText = "Plaats de code in het witte vak...";
+                                statusElement.style.background = "rgba(0,0,0,0.8)";
+                                overlayElement.style.borderColor = "#fff";
+                                isScanning = true;
+                            }, 2000);
+                        }
+                    } catch (e) {
+                        // Negeer framefouten tijdens het bewegen
+                    }
+                }, 200);
+
+            } catch (err) {
+                statusElement.innerText = "Camera geblokkeerd. Geef Chrome toestemming via het slotje linksboven.";
+                statusElement.style.background = "#e74c3c";
+            }
         }
     </script>
 </body>
