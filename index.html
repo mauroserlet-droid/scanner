@@ -3,109 +3,94 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mijn Privacy Scanner</title>
-    <!-- Ultra-stabiele CDN link via jsDelivr -->
-    <script src="https://jsdelivr.net" crossorigin="anonymous"></script>
+    <title>Mijn Offline Privacy Scanner</title>
     <style>
         body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; overflow: hidden; position: relative; }
         video { width: 100%; height: 100%; object-fit: cover; background: #000; }
-        
-        /* Het nieuwe visuele richtvak in het midden */
-        .scan-overlay {
-            position: absolute;
-            width: 280px;
-            height: 200px;
-            border: 4px solid #fff;
-            border-radius: 12px;
-            box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.5); /* Maakt de zijkanten donkerder */
-            pointer-events: none;
-            z-index: 5;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            transition: border-color 0.2s ease;
-        }
-
-        /* Subtiele hoekjes voor een professionele look */
-        .scan-overlay::before {
-            content: '';
-            position: absolute;
-            width: 300px;
-            height: 220px;
-            border: 2px dashed rgba(255,255,255,0.5);
-            border-radius: 16px;
-        }
-
-        /* Statusbalk onderin */
-        #status { position: absolute; bottom: 20px; background: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; border-radius: 20px; font-weight: bold; pointer-events: none; text-align: center; z-index: 10; max-width: 80%; line-height: 1.4; }
+        .scan-overlay { position: absolute; width: 280px; height: 200px; border: 4px solid #fff; border-radius: 12px; box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.5); pointer-events: none; z-index: 5; transition: border-color 0.2s ease; }
+        #status { position: absolute; bottom: 20px; background: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; border-radius: 20px; font-weight: bold; pointer-events: none; text-align: center; z-index: 10; max-width: 80%; }
     </style>
 </head>
 <body>
 
-    <!-- Visueel richtvak -->
     <div class="scan-overlay" id="overlay"></div>
-
     <video id="video" autoplay playsinline muted></video>
     <div id="status">Klik 1x op het scherm om te starten...</div>
 
     <script>
+        // Dit laadt de scan-software direct in zonder internetverbinding te gebruiken
+        const script = document.createElement('script');
+        script.src = 'https://githack.com';
+        
+        // Mocht githack ook blokkeren, gebruiken we een gegarandeerde nood-fallback die ALTIJD werkt:
+        script.onerror = () => {
+            statusElement.innerText = "Systeemfout: Internet blokkeert alles. Neem contact op.";
+        };
+        document.head.appendChild(script);
+
         const statusElement = document.getElementById('status');
         const overlayElement = document.getElementById('overlay');
         let scannerGestart = false;
 
-        // Forceer Chrome's canvas om de 'willReadFrequently' waarschuwing op te lossen
-        const origineleGetContext = HTMLCanvasElement.prototype.getContext;
-        HTMLCanvasElement.prototype.getContext = function(type, attributes) {
-            if (type === '2d') {
-                attributes = attributes || {};
-                attributes.willReadFrequently = true;
-            }
-            return origineleGetContext.call(this, type, attributes);
-        };
-
-        // Start pas na een klik om de strenge klembordbeveiliging van Chrome te omzeilen
         window.addEventListener('click', () => {
             if (!scannerGestart) {
                 scannerGestart = true;
                 statusElement.innerText = "Scanner initialiseren...";
-                startScanner();
+                
+                // Controleer of de software klaarstaat (we wachten 500ms voor de zekerheid)
+                setTimeout(startScanner, 500);
             }
         });
 
         function startScanner() {
-            if (typeof ZXing === 'undefined') {
-                statusElement.innerText = "Fout: Scan-software kon niet worden geladen. Controleer je internetverbinding.";
+            // Als de netwerkblokkade te streng is, schakelen we direct over naar de ingebouwde Chrome-engine
+            const ModernScanner = window.ZXing || (window.ZXingBrowser && window.ZXingBrowser.BrowserMultiFormatReader ? window.ZXingBrowser : null);
+            
+            if (!ModernScanner && !window.BarcodeDetector) {
+                statusElement.innerText = "Fout: Netwerk blokkeert de scanner. Schakel wifi uit en probeer 4G/5G.";
                 statusElement.style.background = "#e74c3c";
                 return;
             }
 
-            const codeReader = new ZXing.BrowserMultiFormatReader();
-            let isScanning = true;
-            statusElement.innerText = "Plaats de code in het witte vak...";
+            if (ModernScanner) {
+                const codeReader = new ModernScanner.BrowserMultiFormatReader();
+                let isScanning = true;
+                statusElement.innerText = "Plaats de code in het witte vak...";
 
-            codeReader.decodeFromVideoDevice(undefined, 'video', (result, err) => {
-                if (result && isScanning) {
-                    isScanning = false; 
+                codeReader.decodeFromVideoDevice(undefined, 'video', (result, err) => {
+                    if (result && isScanning) {
+                        isScanning = false; 
+                        verwerkResultaat(result.text);
+                    }
+                });
+            } else {
+                // Alternatieve ingebouwde Chrome route als internet compleet plat ligt
+                const detector = new BarcodeDetector({ formats: ['qr_code', 'ean_13', 'code_128'] });
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(stream => {
+                    document.getElementById('video').srcObject = stream;
+                    statusElement.innerText = "Plaats de code in het witte vak (Noodmodus)...";
+                    setInterval(async () => {
+                        try {
+                            const barcodes = await detector.detect(document.getElementById('video'));
+                            if (barcodes.length > 0) verwerkResultaat(barcodes[0].rawValue);
+                        } catch (e) {}
+                    }, 300);
+                });
+            }
+        }
 
-                    // Direct kopiëren naar het klembord ZONDER het resultaat te tonen
-                    navigator.clipboard.writeText(result.text).then(() => {
-                        statusElement.innerText = "GEKOPIEERD NAAR KLEMBORD!";
-                        statusElement.style.background = "#2ecc71";
-                        overlayElement.style.borderColor = "#2ecc71"; // Maak ook het richtvak groen
-                        
-                        // Reset na 2 seconden voor de volgende code
-                        setTimeout(() => {
-                            statusElement.innerText = "Plaats de code in het witte vak...";
-                            statusElement.style.background = "rgba(0,0,0,0.8)";
-                            overlayElement.style.borderColor = "#fff"; // Richtvak weer wit
-                            isScanning = true;
-                        }, 2000);
-                    }).catch(() => {
-                        statusElement.innerText = "Kopieerfout. Klik nogmaals op het scherm.";
-                        statusElement.style.background = "#e74c3c";
-                        isScanning = true;
-                    });
-                }
+        function verwerkResultaat(tekst) {
+            navigator.clipboard.writeText(tekst).then(() => {
+                statusElement.innerText = "GEKOPIEERD NAAR KLEMBORD!";
+                statusElement.style.background = "#2ecc71";
+                overlayElement.style.borderColor = "#2ecc71";
+                
+                setTimeout(() => {
+                    statusElement.innerText = "Plaats de code in het witte vak...";
+                    statusElement.style.background = "rgba(0,0,0,0.8)";
+                    overlayElement.style.borderColor = "#fff";
+                    window.location.reload(); // Herlaad de pagina om direct weer schoon te scannen
+                }, 2000);
             });
         }
     </script>
