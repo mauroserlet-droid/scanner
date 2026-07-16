@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mijn Privacy Scanner</title>
-    <!-- Veilige scan-software via betrouwbare CDN -->
-    <script src="https://jsdelivr.net"></script>
+    <!-- Ultra-stabiele CDN link via jsDelivr om TIMEOUTS te voorkomen -->
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/umd/index.min.js" crossorigin="anonymous"></script>
     <style>
         body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; overflow: hidden; }
         video { width: 100%; height: 100%; object-fit: cover; background: #000; }
@@ -15,75 +15,56 @@
 <body>
 
     <video id="video" autoplay playsinline muted></video>
-    <div id="status">Klik 1x op het scherm om de camera te starten...</div>
+    <div id="status">Klik 1x op het scherm om te starten...</div>
 
     <script>
         const statusElement = document.getElementById('status');
         let scannerGestart = false;
 
-        // Activeer de camera pas na een klik om browserblokkades te voorkomen
+        // Start pas na een klik om de strenge klembordbeveiliging van Chrome te omzeilen
         window.addEventListener('click', () => {
             if (!scannerGestart) {
                 scannerGestart = true;
-                statusElement.innerText = "Camera initialiseren...";
+                statusElement.innerText = "Scanner initialiseren...";
                 startScanner();
             }
         });
 
-        async function startScanner() {
-            try {
-                const codeReader = new ZXing.BrowserMultiFormatReader();
-                let isScanning = true;
-
-                // Haal alle beschikbare camera's op
-                const videoDevices = await codeReader.listVideoInputDevices();
-                
-                if (videoDevices.length === 0) {
-                    statusElement.innerText = "Fout: Geen webcam gevonden op dit apparaat.";
-                    statusElement.style.background = "#e74c3c";
-                    return;
-                }
-
-                // Kies de eerste beschikbare camera (of de achtercamera op mobiel)
-                let geselecteerdeCameraId = videoDevices[0].deviceId;
-                for (const device of videoDevices) {
-                    if (device.label.toLowerCase().includes('back') || device.label.toLowerCase().includes('achter')) {
-                        geselecteerdeCameraId = device.deviceId;
-                        break;
-                    }
-                }
-
-                statusElement.innerText = "Richt camera op QR of Barcode...";
-
-                // Start het scannen vanaf de geselecteerde camera
-                codeReader.decodeFromVideoDevice(geselecteerdeCameraId, 'video', (result, err) => {
-                    if (result && isScanning) {
-                        isScanning = false; 
-
-                        // Direct kopiëren naar klembord ZONDER het resultaat te tonen
-                        navigator.clipboard.writeText(result.text).then(() => {
-                            statusElement.innerText = "GEKOPIEERD NAAR KLEMBORD!";
-                            statusElement.style.background = "#2ecc71";
-                            
-                            // Reset de scanner na 2 seconden voor de volgende code (sluit niet af)
-                            setTimeout(() => {
-                                statusElement.innerText = "Richt camera op QR of Barcode...";
-                                statusElement.style.background = "rgba(0,0,0,0.8)";
-                                isScanning = true;
-                            }, 2000);
-                        }).catch(() => {
-                            statusElement.innerText = "Kopieerfout. Klik nogmaals op het scherm.";
-                            statusElement.style.background = "#e74c3c";
-                            isScanning = true;
-                        });
-                    }
-                });
-
-            } catch (error) {
-                console.error(error);
-                statusElement.innerText = "Fout bij opstarten camera. Controleer Chrome camerarechten.";
+        function startScanner() {
+            // Controleer of de software correct is ingeladen
+            if (typeof ZXing === 'undefined') {
+                statusElement.innerText = "Fout: Scan-software kon niet worden geladen. Controleer je internetverbinding.";
                 statusElement.style.background = "#e74c3c";
+                return;
             }
+
+            const codeReader = new ZXing.BrowserMultiFormatReader();
+            let isScanning = true;
+            statusElement.innerText = "Richt camera op QR of Barcode...";
+
+            // Start de scanner direct op de standaard camera
+            codeReader.decodeFromVideoDevice(undefined, 'video', (result, err) => {
+                if (result && isScanning) {
+                    isScanning = false; 
+
+                    // Direct kopiëren naar het klembord ZONDER het resultaat te tonen
+                    navigator.clipboard.writeText(result.text).then(() => {
+                        statusElement.innerText = "GEKOPIEERD NAAR KLEMBORD!";
+                        statusElement.style.background = "#2ecc71";
+                        
+                        // Reset de scanner na 2 seconden voor de volgende code (sluit niet af)
+                        setTimeout(() => {
+                            statusElement.innerText = "Richt camera op QR of Barcode...";
+                            statusElement.style.background = "rgba(0,0,0,0.8)";
+                            isScanning = true;
+                        }, 2000);
+                    }).catch(() => {
+                        statusElement.innerText = "Kopieerfout. Klik nogmaals op het scherm.";
+                        statusElement.style.background = "#e74c3c";
+                        isScanning = true;
+                    });
+                }
+            });
         }
     </script>
 </body>
