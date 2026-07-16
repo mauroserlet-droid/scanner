@@ -4,22 +4,64 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mijn Privacy Scanner</title>
-    <!-- Ultra-stabiele CDN link via jsDelivr om TIMEOUTS te voorkomen -->
-    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/umd/index.min.js" crossorigin="anonymous"></script>
+    <!-- Ultra-stabiele CDN link via jsDelivr -->
+    <script src="https://jsdelivr.net" crossorigin="anonymous"></script>
     <style>
-        body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; overflow: hidden; }
+        body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; overflow: hidden; position: relative; }
         video { width: 100%; height: 100%; object-fit: cover; background: #000; }
+        
+        /* Het nieuwe visuele richtvak in het midden */
+        .scan-overlay {
+            position: absolute;
+            width: 280px;
+            height: 200px;
+            border: 4px solid #fff;
+            border-radius: 12px;
+            box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.5); /* Maakt de zijkanten donkerder */
+            pointer-events: none;
+            z-index: 5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: border-color 0.2s ease;
+        }
+
+        /* Subtiele hoekjes voor een professionele look */
+        .scan-overlay::before {
+            content: '';
+            position: absolute;
+            width: 300px;
+            height: 220px;
+            border: 2px dashed rgba(255,255,255,0.5);
+            border-radius: 16px;
+        }
+
+        /* Statusbalk onderin */
         #status { position: absolute; bottom: 20px; background: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; border-radius: 20px; font-weight: bold; pointer-events: none; text-align: center; z-index: 10; max-width: 80%; line-height: 1.4; }
     </style>
 </head>
 <body>
+
+    <!-- Visueel richtvak -->
+    <div class="scan-overlay" id="overlay"></div>
 
     <video id="video" autoplay playsinline muted></video>
     <div id="status">Klik 1x op het scherm om te starten...</div>
 
     <script>
         const statusElement = document.getElementById('status');
+        const overlayElement = document.getElementById('overlay');
         let scannerGestart = false;
+
+        // Forceer Chrome's canvas om de 'willReadFrequently' waarschuwing op te lossen
+        const origineleGetContext = HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext = function(type, attributes) {
+            if (type === '2d') {
+                attributes = attributes || {};
+                attributes.willReadFrequently = true;
+            }
+            return origineleGetContext.call(this, type, attributes);
+        };
 
         // Start pas na een klik om de strenge klembordbeveiliging van Chrome te omzeilen
         window.addEventListener('click', () => {
@@ -31,7 +73,6 @@
         });
 
         function startScanner() {
-            // Controleer of de software correct is ingeladen
             if (typeof ZXing === 'undefined') {
                 statusElement.innerText = "Fout: Scan-software kon niet worden geladen. Controleer je internetverbinding.";
                 statusElement.style.background = "#e74c3c";
@@ -40,9 +81,8 @@
 
             const codeReader = new ZXing.BrowserMultiFormatReader();
             let isScanning = true;
-            statusElement.innerText = "Richt camera op QR of Barcode...";
+            statusElement.innerText = "Plaats de code in het witte vak...";
 
-            // Start de scanner direct op de standaard camera
             codeReader.decodeFromVideoDevice(undefined, 'video', (result, err) => {
                 if (result && isScanning) {
                     isScanning = false; 
@@ -51,11 +91,13 @@
                     navigator.clipboard.writeText(result.text).then(() => {
                         statusElement.innerText = "GEKOPIEERD NAAR KLEMBORD!";
                         statusElement.style.background = "#2ecc71";
+                        overlayElement.style.borderColor = "#2ecc71"; // Maak ook het richtvak groen
                         
-                        // Reset de scanner na 2 seconden voor de volgende code (sluit niet af)
+                        // Reset na 2 seconden voor de volgende code
                         setTimeout(() => {
-                            statusElement.innerText = "Richt camera op QR of Barcode...";
+                            statusElement.innerText = "Plaats de code in het witte vak...";
                             statusElement.style.background = "rgba(0,0,0,0.8)";
+                            overlayElement.style.borderColor = "#fff"; // Richtvak weer wit
                             isScanning = true;
                         }, 2000);
                     }).catch(() => {
