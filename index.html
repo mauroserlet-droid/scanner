@@ -8,54 +8,82 @@
     <script src="https://jsdelivr.net"></script>
     <style>
         body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; overflow: hidden; }
-        video { width: 100%; height: 100%; object-fit: cover; }
-        #status { position: absolute; bottom: 20px; background: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; border-radius: 20px; font-weight: bold; pointer-events: none; text-align: center; z-index: 10; }
+        video { width: 100%; height: 100%; object-fit: cover; background: #000; }
+        #status { position: absolute; bottom: 20px; background: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; border-radius: 20px; font-weight: bold; pointer-events: none; text-align: center; z-index: 10; max-width: 80%; line-height: 1.4; }
     </style>
 </head>
 <body>
 
-    <video id="video" autoplay playsinline></video>
-    <div id="status">Klik 1x op het scherm om klembord te activeren...</div>
+    <video id="video" autoplay playsinline muted></video>
+    <div id="status">Klik 1x op het scherm om de camera te starten...</div>
 
     <script>
         const statusElement = document.getElementById('status');
-        let klembordGeactiveerd = false;
+        let scannerGestart = false;
 
-        // Vraag toestemming voor klembord via een klik (browserbeveiliging)
+        // Activeer de camera pas na een klik om browserblokkades te voorkomen
         window.addEventListener('click', () => {
-            if (!klembordGeactiveerd) {
-                klembordGeactiveerd = true;
-                statusElement.innerText = "Camera opstarten...";
+            if (!scannerGestart) {
+                scannerGestart = true;
+                statusElement.innerText = "Camera initialiseren...";
                 startScanner();
             }
         });
 
-        function startScanner() {
-            const codeReader = new ZXing.BrowserMultiFormatReader();
-            let isScanning = true;
-            statusElement.innerText = "Richt camera op QR of Barcode...";
+        async function startScanner() {
+            try {
+                const codeReader = new ZXing.BrowserMultiFormatReader();
+                let isScanning = true;
 
-            codeReader.decodeFromVideoDevice(null, 'video', (result, err) => {
-                if (result && isScanning) {
-                    isScanning = false; 
-
-                    // Direct kopiëren naar klembord ZONDER tonen
-                    navigator.clipboard.writeText(result.text).then(() => {
-                        statusElement.innerText = "GEKOPIEERD NAAR KLEMBORD!";
-                        statusElement.style.background = "#2ecc71";
-                        
-                        setTimeout(() => {
-                            statusElement.innerText = "Richt camera op QR of Barcode...";
-                            statusElement.style.background = "rgba(0,0,0,0.8)";
-                            isScanning = true;
-                        }, 2000);
-                    }).catch(() => {
-                        statusElement.innerText = "Kopieerfout. Klik nogmaals.";
-                        statusElement.style.background = "#e74c3c";
-                        isScanning = true;
-                    });
+                // Haal alle beschikbare camera's op
+                const videoDevices = await codeReader.listVideoInputDevices();
+                
+                if (videoDevices.length === 0) {
+                    statusElement.innerText = "Fout: Geen webcam gevonden op dit apparaat.";
+                    statusElement.style.background = "#e74c3c";
+                    return;
                 }
-            });
+
+                // Kies de eerste beschikbare camera (of de achtercamera op mobiel)
+                let geselecteerdeCameraId = videoDevices[0].deviceId;
+                for (const device of videoDevices) {
+                    if (device.label.toLowerCase().includes('back') || device.label.toLowerCase().includes('achter')) {
+                        geselecteerdeCameraId = device.deviceId;
+                        break;
+                    }
+                }
+
+                statusElement.innerText = "Richt camera op QR of Barcode...";
+
+                // Start het scannen vanaf de geselecteerde camera
+                codeReader.decodeFromVideoDevice(geselecteerdeCameraId, 'video', (result, err) => {
+                    if (result && isScanning) {
+                        isScanning = false; 
+
+                        // Direct kopiëren naar klembord ZONDER het resultaat te tonen
+                        navigator.clipboard.writeText(result.text).then(() => {
+                            statusElement.innerText = "GEKOPIEERD NAAR KLEMBORD!";
+                            statusElement.style.background = "#2ecc71";
+                            
+                            // Reset de scanner na 2 seconden voor de volgende code (sluit niet af)
+                            setTimeout(() => {
+                                statusElement.innerText = "Richt camera op QR of Barcode...";
+                                statusElement.style.background = "rgba(0,0,0,0.8)";
+                                isScanning = true;
+                            }, 2000);
+                        }).catch(() => {
+                            statusElement.innerText = "Kopieerfout. Klik nogmaals op het scherm.";
+                            statusElement.style.background = "#e74c3c";
+                            isScanning = true;
+                        });
+                    }
+                });
+
+            } catch (error) {
+                console.error(error);
+                statusElement.innerText = "Fout bij opstarten camera. Controleer Chrome camerarechten.";
+                statusElement.style.background = "#e74c3c";
+            }
         }
     </script>
 </body>
